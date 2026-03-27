@@ -1,0 +1,97 @@
+name: Build arm64-v8a APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-arm64-v8a-apk.yml"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle.properties"
+      - "gradle/**"
+      - "TMessagesProj/**"
+      - "TMessagesProj_AppStandalone/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-arm64-v8a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64-v8a-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;21.4.7075529" \
+            "cmake;3.10.2.4988404"
+
+      - name: Prepare local.properties
+        shell: bash
+        run: |
+          cat > local.properties <<EOF
+          sdk.dir=${ANDROID_SDK_ROOT}
+          EOF
+
+      - name: Prepare CI placeholders
+        shell: bash
+        run: |
+          cat > secrets_for_ci.env <<EOF
+          SYSTEM_USERNAME=github-actions
+          TELEGRAM_CHAT_ID=0
+          TELEGRAM_BOT_TOKEN=dummy
+          EOF
+
+          keytool -genkeypair \
+            -v \
+            -keystore Your_Key.jks \
+            -storepass Your_Password \
+            -alias Your_Alias \
+            -keypass Your_Password \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=GitHub Actions, OU=CI, O=Cherrygram, L=GitHub, S=GitHub, C=US" \
+            -noprompt
+
+      - name: Make Gradle wrapper executable
+        shell: bash
+        run: chmod +x ./gradlew
+
+      - name: Build standalone APKs
+        shell: bash
+        run: ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace --no-daemon
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherrygram-arm64-v8a-apk
+          path: TMessagesProj_AppStandalone/afat/standalone/*arm64-v8a.apk
+          if-no-files-found: error
