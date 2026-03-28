@@ -11,7 +11,13 @@
 #include <sys/stat.h>
 #include <time.h>
 
+#if defined(HAS_COLORADO)
 #include "colorado/colorado.h"
+#else
+static int check_signature(void) {
+    return 1;
+}
+#endif
 
 int registerNativeTgNetFunctions(JavaVM *vm, JNIEnv *env);
 int videoOnJNILoad(JavaVM *vm, JNIEnv *env);

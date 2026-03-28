@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.10.2)
+project(TMessagesProjJni)
 
 set(CMAKE_CXX_FLAGS "-std=c++14 -DANDROID -g")
 set(CMAKE_C_FLAGS "-w -std=c11 -DANDROID -D_LARGEFILE_SOURCE=1 -g")
@@ -361,7 +362,11 @@ target_include_directories(breakpad PUBLIC
 
 #voip
 include(${CMAKE_HOME_DIRECTORY}/voip/CMakeLists.txt)
-include(${CMAKE_HOME_DIRECTORY}/colorado/CMakeLists.txt)
+set(HAS_COLORADO FALSE)
+if (EXISTS "${CMAKE_HOME_DIRECTORY}/colorado/CMakeLists.txt")
+    include(${CMAKE_HOME_DIRECTORY}/colorado/CMakeLists.txt)
+    set(HAS_COLORADO TRUE)
+endif()
 
 set(NATIVE_LIB "tmessages.49")
 
@@ -395,6 +400,10 @@ target_compile_options(${NATIVE_LIB} PUBLIC
 
 target_compile_definitions(${NATIVE_LIB} PUBLIC
         BSD=1 NULL=0 SOCKLEN_T=socklen_t ANDROID_NDK DISABLE_IMPORTGL AVOID_TABLES ANDROID_TILE_BASED_DECODE __STDC_CONSTANT_MACROS ANDROID_ARMV6_IDCT OPUS_BUILD FIXED_POINT USE_ALLOCA restrict= __EMX__ LOCALE_NOT_USED HAVE_LRINT HAVE_LRINTF)
+
+if (HAS_COLORADO)
+    target_compile_definitions(${NATIVE_LIB} PUBLIC HAS_COLORADO=1)
+endif()
 
 if (${ANDROID_ABI} STREQUAL "armeabi-v7a")
     set_target_properties(${NATIVE_LIB} PROPERTIES
@@ -673,9 +682,12 @@ target_link_libraries(${NATIVE_LIB}
         EGL
         android
         OpenSLES
-        colorado
         cpufeatures
         breakpad)
+
+if (HAS_COLORADO)
+    target_link_libraries(${NATIVE_LIB} colorado)
+endif()
 
 #if (${ANDROID_ABI} STREQUAL "x86" OR ${ANDROID_ABI} STREQUAL "x86_64")
 #    target_link_libraries(${NATIVE_LIB}
