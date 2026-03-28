@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          yes | sdkmanager --licenses > /dev/null
+          yes 2>/dev/null | sdkmanager --licenses > /dev/null
           license_status=("${PIPESTATUS[@]}")
           set -e
 
@@ -55,7 +55,7 @@ jobs:
             exit "${license_status[1]}"
           fi
 
-          if [[ "${license_status[0]}" -ne 0 && "${license_status[0]}" -ne 141 ]]; then
+          if [[ "${license_status[0]}" -ne 0 && "${license_status[0]}" -ne 1 && "${license_status[0]}" -ne 141 ]]; then
             echo "yes failed with unexpected exit code ${license_status[0]}"
             exit "${license_status[0]}"
           fi
