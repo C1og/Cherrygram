@@ -8,11 +8,25 @@ on:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    env:
+      GITLAB_HOST: gitlab.com
+      GITLAB_REPO_PATH: arsLan4k1390/Cherrygram.git
 
     steps:
       - name: Mirror GitHub → GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITLAB_USERNAME: ${{ secrets.GITLAB_USERNAME }}
         run: |
+          if [ -z "${GITLAB_TOKEN}" ]; then
+            echo "Missing required secret: GITLAB_TOKEN"
+            exit 1
+          fi
+
+          GITLAB_AUTH_USER="${GITLAB_USERNAME:-oauth2}"
+          GITLAB_PUSH_URL="https://${GITLAB_AUTH_USER}:${GITLAB_TOKEN}@${GITLAB_HOST}/${GITLAB_REPO_PATH}"
+
           git clone --mirror https://github.com/arsLan4k1390/Cherrygram.git
           cd Cherrygram.git
-          git remote set-url --push origin https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.com/arsLan4k1390/Cherrygram.git
+          git remote set-url --push origin "${GITLAB_PUSH_URL}"
           git push --mirror

@@ -18563,9 +18563,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (doneButtonPressed) {
             releasePlayer(true);
         }
-        if (currentMessageObject != null && !currentMessageObject.putInDownloadsStore) {
-            FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());
-        }
+        stopActiveViewerDownloads();
         isVisible = false;
         isVisibleOrAnimating = false;
         cropInitied = false;
@@ -18655,6 +18653,42 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             videoFrameBitmap.recycle();
             videoFrameBitmap = null;
         }
+    }
+
+    private void stopActiveViewerDownloads() {
+        if (currentAccount < 0) {
+            return;
+        }
+        ArrayList<MessageObject> messagesToStop = new ArrayList<>(3);
+        addViewerDownloadTarget(messagesToStop, currentMessageObject);
+        addViewerDownloadTarget(messagesToStop, getMessageObjectAt(currentIndex + 1));
+        addViewerDownloadTarget(messagesToStop, getMessageObjectAt(currentIndex - 1));
+        if (!messagesToStop.isEmpty()) {
+            DownloadController.getInstance(currentAccount).stopDownloads(messagesToStop);
+        }
+    }
+
+    private MessageObject getMessageObjectAt(int index) {
+        if (index < 0 || index >= imagesArr.size()) {
+            return null;
+        }
+        return imagesArr.get(index);
+    }
+
+    private void addViewerDownloadTarget(ArrayList<MessageObject> messagesToStop, MessageObject messageObject) {
+        if (messageObject == null || messageObject.getDocument() == null) {
+            return;
+        }
+        if (!messageObject.isVideo() && !messageObject.isRoundVideo() && !messageObject.isGif()) {
+            return;
+        }
+        for (int i = 0; i < messagesToStop.size(); i++) {
+            MessageObject existing = messagesToStop.get(i);
+            if (existing.getId() == messageObject.getId() && existing.getDialogId() == messageObject.getDialogId()) {
+                return;
+            }
+        }
+        messagesToStop.add(messageObject);
     }
 
     private void redraw(final int count) {

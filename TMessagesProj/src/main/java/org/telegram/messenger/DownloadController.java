@@ -1761,7 +1761,15 @@ public class DownloadController extends BaseController implements NotificationCe
         });
     }
 
+    public void stopDownloads(ArrayList<MessageObject> messageObjects) {
+        removeDownloads(messageObjects, false);
+    }
+
     public void deleteRecentFiles(ArrayList<MessageObject> messageObjects) {
+        removeDownloads(messageObjects, true);
+    }
+
+    private void removeDownloads(ArrayList<MessageObject> messageObjects, boolean deleteFiles) {
         for (int i = 0; i < messageObjects.size(); i++) {
             boolean found = false;
             for (int j = 0; j < recentDownloadingFiles.size(); j++) {
@@ -1782,7 +1790,7 @@ public class DownloadController extends BaseController implements NotificationCe
             }
             messageObjects.get(i).putInDownloadsStore = false;
             FileLoader.getInstance(currentAccount).loadFile(messageObjects.get(i).getDocument(), messageObjects.get(i), FileLoader.PRIORITY_LOW, 0);
-            FileLoader.getInstance(currentAccount).cancelLoadFile(messageObjects.get(i).getDocument(), true);
+            FileLoader.getInstance(currentAccount).cancelLoadFile(messageObjects.get(i).getDocument(), deleteFiles);
         }
         getNotificationCenter().postNotificationName(NotificationCenter.onDownloadingFilesChanged);
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -1794,11 +1802,13 @@ public class DownloadController extends BaseController implements NotificationCe
                     state.bindLong(2, messageObjects.get(i).getDocument().id);
                     state.step();
 
-                    try {
-                        File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageObjects.get(i).messageOwner);
-                        file.delete();
-                    } catch (Exception e) {
-                        FileLog.e(e);
+                    if (deleteFiles) {
+                        try {
+                            File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageObjects.get(i).messageOwner);
+                            file.delete();
+                        } catch (Exception e) {
+                            FileLog.e(e);
+                        }
                     }
                 }
                 state.dispose();
