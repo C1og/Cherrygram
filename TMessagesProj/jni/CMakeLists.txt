@@ -372,7 +372,6 @@ set(NATIVE_LIB "tmessages.49")
 
 #tmessages
 add_library(${NATIVE_LIB} SHARED
-        security/secure_validator.cpp
         jni.c
         audio.c
         webm_encoder.c
