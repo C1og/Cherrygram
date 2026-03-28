@@ -6,6 +6,10 @@ build/
 obj/
 TMessagesProj/jni/colorado
 TMessagesProj/jni/security
+!TMessagesProj/jni/security/
+!TMessagesProj/jni/security/secure_validator.cpp
+!TMessagesProj/jni/security/secure_validator.hpp
+!TMessagesProj/jni/security/skCrypter.hpp
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/Extra.kt
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/CameraXController.java
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/VideoMessagesHelper.java
