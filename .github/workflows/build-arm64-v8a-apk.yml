@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace --info --console=plain --no-daemon 2>&1 | tee build-arm64-v8a-apk.log
+          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone -PskipTelegramPublish=true --stacktrace --info --console=plain --no-daemon 2>&1 | tee build-arm64-v8a-apk.log
 
       - name: Upload build log
         if: always()
@@ -139,6 +139,14 @@ jobs:
         with:
           name: cherrygram-arm64-v8a-build-log
           path: build-arm64-v8a-apk.log
+          if-no-files-found: warn
+
+      - name: Upload Gradle problems report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherrygram-gradle-problems-report
+          path: build/reports/problems
           if-no-files-found: warn
 
       - name: Upload arm64-v8a APK

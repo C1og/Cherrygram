@@ -214,6 +214,18 @@ env.each { key, value ->
     ext."$key" = value
 }
 
+def isGitHubActions = String.valueOf(System.getenv('GITHUB_ACTIONS')).equalsIgnoreCase('true')
+def skipTelegramPublish = project.hasProperty('skipTelegramPublish') ||
+        String.valueOf(System.getenv('SKIP_TELEGRAM_PUBLISH')).equalsIgnoreCase('true')
+def telegramBotToken = ext.has('TELEGRAM_BOT_TOKEN') ? String.valueOf(ext.TELEGRAM_BOT_TOKEN) : ''
+def telegramChatId = ext.has('TELEGRAM_CHAT_ID') ? String.valueOf(ext.TELEGRAM_CHAT_ID) : ''
+def canPublishToTelegram = !isGitHubActions &&
+        !skipTelegramPublish &&
+        telegramBotToken &&
+        telegramBotToken != 'dummy' &&
+        telegramChatId &&
+        telegramChatId != '0'
+
 /*task printSecrets {
     doLast {
         println "TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}"
@@ -271,6 +283,11 @@ def apkFilePath2 = "${projectDir}/afat/standalone/${fileName2}"
 
 tasks.register('sendApk') {
     doLast {
+        if (!canPublishToTelegram) {
+            println "Skipping Telegram APK publish for this build environment."
+            return
+        }
+
         def file = new File(apkFilePath)
         def file2 = new File(apkFilePath2)
 
@@ -356,10 +373,15 @@ tasks.configureEach { task ->
 
     if (task.name == 'assembleAfatStandalone') {
         if (isWindowsOrMacOS()) {
-            sendApk.mustRunAfter copyFiles
-            task.finalizedBy 'copyFiles', 'sendApk'
+            task.finalizedBy 'copyFiles'
+            if (canPublishToTelegram) {
+                sendApk.mustRunAfter copyFiles
+                task.finalizedBy 'sendApk'
+            }
         } else {
-            task.finalizedBy 'sendApk'
+            if (canPublishToTelegram) {
+                task.finalizedBy 'sendApk'
+            }
         }
     }
 }
