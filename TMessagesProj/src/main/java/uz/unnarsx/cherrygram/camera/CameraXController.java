@@ -1,13 +1,14 @@
 package uz.unnarsx.cherrygram.camera;
 
 import android.content.Context;
-import android.util.Size;
 
 import androidx.annotation.IntDef;
 import androidx.camera.core.ImageCapture;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.LifecycleRegistry;
+
+import org.telegram.messenger.camera.Size;
 
 import java.io.File;
 import java.lang.annotation.Retention;

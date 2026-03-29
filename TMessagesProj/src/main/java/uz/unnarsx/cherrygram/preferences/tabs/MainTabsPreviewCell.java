@@ -39,7 +39,7 @@ public class MainTabsPreviewCell extends FrameLayout {
         row.setGravity(Gravity.CENTER);
 
         for (MainTabsManager.Tab tab : tabs) {
-            if (!tab.getEnabled()) {
+            if (!tab.enabled) {
                 continue;
             }
             TextView textView = new TextView(context);
