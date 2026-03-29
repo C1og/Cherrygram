@@ -99,9 +99,47 @@ jobs:
         shell: bash
         run: chmod +x ./gradlew
 
+      - name: Verify required Cherrygram sources
+        shell: bash
+        run: |
+          missing=0
+          required_files=(
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/Extra.kt"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/CameraXController.java"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/VideoMessagesHelper.java"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/filters/MessagesFilterHelper.kt"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/ui/MessageMenuCompactView.java"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/ui/MessageMenuHelper.java"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/core/ui/folders/FoldersHelper.kt"
+            "TMessagesProj/src/main/java/uz/unnarsx/cherrygram/preferences/tabs/MainTabsPreviewCell.java"
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error file=$file::Missing required Cherrygram source file in checkout"
+              missing=1
+            fi
+          done
+
+          if [[ "$missing" -ne 0 ]]; then
+            echo "Cherrygram required source files are missing from the workflow checkout."
+            echo "Make sure the stub/source compatibility files are committed together with .gitignore updates."
+            exit 1
+          fi
+
       - name: Build standalone APKs
         shell: bash
-        run: ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew :TMessagesProj_AppStandalone:assembleAfatStandalone --stacktrace --info --console=plain --no-daemon 2>&1 | tee build-arm64-v8a-apk.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cherrygram-arm64-v8a-build-log
+          path: build-arm64-v8a-apk.log
+          if-no-files-found: warn
 
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4

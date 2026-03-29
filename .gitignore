@@ -21,6 +21,15 @@ TMessagesProj/jni/security
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/ui/MessageMenuScrollView.java
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/core/ui/folders/FoldersHelper.kt
 /TMessagesProj/src/main/java/uz/unnarsx/cherrygram/preferences/tabs/MainTabsPreviewCell.java
+# These compatibility/stub sources are referenced by tracked code and must stay visible to CI.
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/Extra.kt
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/CameraXController.java
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/camera/VideoMessagesHelper.java
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/filters/MessagesFilterHelper.kt
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/ui/MessageMenuCompactView.java
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/chats/ui/MessageMenuHelper.java
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/core/ui/folders/FoldersHelper.kt
+!TMessagesProj/src/main/java/uz/unnarsx/cherrygram/preferences/tabs/MainTabsPreviewCell.java
 *.iml
 local.properties
 TMessagesProj/.cxx/
