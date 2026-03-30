@@ -48,8 +48,12 @@ public class BuildVars {
     public static boolean SUPPORTS_PASSKEYS = Build.VERSION.SDK_INT >= 34;
 
     static {
-        APP_ID = Extra.APP_ID;
-        APP_HASH = Extra.APP_HASH;
+        if (Extra.APP_ID > 0) {
+            APP_ID = Extra.APP_ID;
+        }
+        if (Extra.APP_HASH != null && !Extra.APP_HASH.isEmpty()) {
+            APP_HASH = Extra.APP_HASH;
+        }
         PLAYSTORE_APP_URL = Constants.UPDATE_APP_URL;
         HUAWEI_STORE_URL = Constants.UPDATE_APP_URL;
 

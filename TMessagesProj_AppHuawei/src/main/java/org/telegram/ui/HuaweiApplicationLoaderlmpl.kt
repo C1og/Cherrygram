@@ -16,6 +16,7 @@ import com.aheaditec.talsec_security.security.api.Talsec
 import com.aheaditec.talsec_security.security.api.TalsecConfig
 import com.aheaditec.talsec_security.security.api.ThreatListener
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.FileLog
 import org.telegram.messenger.HuaweiApplicationLoader
 import uz.unnarsx.cherrygram.Extra
 import uz.unnarsx.cherrygram.core.configs.CherrygramCoreConfig
@@ -30,7 +31,7 @@ class HuaweiApplicationLoaderlmpl : HuaweiApplicationLoader(), ThreatListener.Th
 
         private val expectedSigningCertificateHashBase64 = arrayOf(
             getPkgHash(), getPkgHashGP()
-        )
+        ).filter { it.isNotBlank() }.toTypedArray()
 
         private const val watcherMail = "arslan4k1390@gmail.com"
 
@@ -67,15 +68,23 @@ class HuaweiApplicationLoaderlmpl : HuaweiApplicationLoader(), ThreatListener.Th
     override fun onCreate() {
         super.onCreate()
 
-        val config = TalsecConfig.Builder(expectedPackageName, expectedSigningCertificateHashBase64)
-            .watcherMail(watcherMail)
-            .supportedAlternativeStores(supportedAlternativeStores)
-            .prod(isProd)
-            .killOnBypass(killOnBypass)
-            .build()
+        if (expectedPackageName.isBlank() || expectedSigningCertificateHashBase64.isEmpty()) {
+            return
+        }
 
-        ThreatListener(this, null, null).registerListener(this)
-        Talsec.start(this, config)
+        try {
+            val config = TalsecConfig.Builder(expectedPackageName, expectedSigningCertificateHashBase64)
+                .watcherMail(watcherMail)
+                .supportedAlternativeStores(supportedAlternativeStores)
+                .prod(isProd)
+                .killOnBypass(killOnBypass)
+                .build()
+
+            ThreatListener(this, null, null).registerListener(this)
+            Talsec.start(this, config)
+        } catch (e: Throwable) {
+            FileLog.e(e)
+        }
 
         /*registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
