@@ -149,9 +149,42 @@ jobs:
           path: build/reports/problems
           if-no-files-found: warn
 
+      - name: List generated APKs
+        if: always()
+        shell: bash
+        run: |
+          echo "Checking APK outputs under build/outputs and legacy afat paths"
+          find TMessagesProj_AppStandalone -type f \( -path "*/build/outputs/apk/*" -o -path "*/afat/standalone/*" \) -name "*.apk" -print | sort || true
+
+      - name: Collect arm64-v8a APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact/apk
+
+          mapfile -t apk_matches < <(
+            find TMessagesProj_AppStandalone -type f \
+              \( -path "*/build/outputs/apk/*" -o -path "*/afat/standalone/*" \) \
+              -name "*arm64-v8a.apk" -print | sort
+          )
+
+          if [[ "${#apk_matches[@]}" -eq 0 ]]; then
+            echo "::error::No arm64-v8a APK found in expected output directories."
+            echo "Available APK files:"
+            find TMessagesProj_AppStandalone -type f -name "*.apk" -print | sort || true
+            exit 1
+          fi
+
+          printf 'Collected arm64-v8a APK candidates:\n'
+          printf '%s\n' "${apk_matches[@]}"
+
+          for apk in "${apk_matches[@]}"; do
+            cp -f "$apk" artifact/apk/
+          done
+
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
           name: cherrygram-arm64-v8a-apk
-          path: TMessagesProj_AppStandalone/afat/standalone/*arm64-v8a.apk
+          path: artifact/apk/*arm64-v8a.apk
           if-no-files-found: error
