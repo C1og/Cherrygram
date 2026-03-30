@@ -29,6 +29,16 @@ object Extra {
     @JvmField val XName_Arr = arrayOf("")
     @JvmField val XName_ArrTwo = arrayOf("")
 
+    @JvmField val pkg_arrOne = arrayOf("")
+    @JvmField val pkg_arrTwo = arrayOf("")
+    @JvmField val pkg_arrThree = arrayOf("")
+    @JvmField val pkg_hashOne = arrayOf("")
+    @JvmField val pkg_hashTwo = arrayOf("")
+    @JvmField val pkg_hashThree = arrayOf("")
+    @JvmField val pkg_hashGPOne = arrayOf("")
+    @JvmField val pkg_hashGPTwo = arrayOf("")
+    @JvmField val pkg_hashGPThree = arrayOf("")
+
     @JvmField val FILE_NAME_HASH = arrayOf("")
     @JvmField val GITLAB_RAW_URL_HASH = arrayOf("")
     @JvmField val FILE_NAME_MARKETPLACE_HASH = arrayOf("")
