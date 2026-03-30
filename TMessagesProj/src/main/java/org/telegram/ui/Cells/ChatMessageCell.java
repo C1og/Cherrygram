@@ -6057,7 +6057,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     if (canDownload != 2 && document != null && !messageObject.shouldEncryptPhotoOrVideo() && messageObject.canStreamVideo()) {
                         FileLoader.getInstance(currentAccount).loadFile(document, messageObject, FileLoader.PRIORITY_NORMAL, 0);
                     }
-                } else if (canDownload != 0) {
+                } else if (canDownload != 0 && (!messageObject.isVideo() || !messageObject.loadingCancelled)) {
                     if (document != null) {
                         FileLoader.getInstance(currentAccount).loadFile(document, messageObject, FileLoader.PRIORITY_NORMAL, (MessageObject.isVideoDocument(document) || messageObject.isVoiceOnce() || messageObject.isRoundOnce()) && messageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
                     } else if (photo != null) {

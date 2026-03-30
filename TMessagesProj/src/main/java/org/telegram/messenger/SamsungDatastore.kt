@@ -9,6 +9,7 @@
 
 package org.telegram.messenger
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.telegram.tgnet.ConnectionManagerDelegate
@@ -18,6 +19,8 @@ import uz.unnarsx.cherrygram.core.helpers.AppRestartHelper
 import java.io.File
 
 object SamsungDatastore {
+    private const val GUARD_LOG_TAG = "CherrygramGuard"
+    private const val ENABLE_GUARD_RESTART = false
 
     suspend fun checkCallback() = withContext(Dispatchers.Default) {
         checkIfFilesExist()
@@ -155,10 +158,13 @@ object SamsungDatastore {
     }
 
     private /*suspend*/ fun killAppAndSendEvent() {
+        val message = "[cg-guard] SamsungDatastore requested app restart, enabled=$ENABLE_GUARD_RESTART"
+        Log.e(GUARD_LOG_TAG, message)
+        FileLog.w(message)
         FirebaseAnalyticsHelper.trackEventWithEmptyBundle("found_module")
-//        delay(5000)
-//        exitProcess(0)
-        AppRestartHelper.restartApp(ApplicationLoader.applicationContext)
+        if (ENABLE_GUARD_RESTART) {
+            AppRestartHelper.restartApp(ApplicationLoader.applicationContext)
+        }
     }
 
 }

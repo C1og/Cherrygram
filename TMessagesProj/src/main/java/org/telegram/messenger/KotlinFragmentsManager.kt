@@ -9,6 +9,7 @@
 
 package org.telegram.messenger
 
+import android.util.Log
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,8 @@ import uz.unnarsx.cherrygram.misc.Constants
 import java.util.Locale
 
 object KotlinFragmentsManager: CoroutineScope by MainScope() {
+    private const val GUARD_LOG_TAG = "CherrygramGuard"
+    private const val ENABLE_GUARD_RESTART = false
 
     suspend fun checkConnection() = withContext(Dispatchers.Default) {
 //        etrioaei43()
@@ -184,8 +187,12 @@ object KotlinFragmentsManager: CoroutineScope by MainScope() {
     }
 
     fun nfweioufwehr117() {
-//        exitProcess(0)
-        AppRestartHelper.restartApp(ApplicationLoader.applicationContext)
+        val message = "[cg-guard] KotlinFragmentsManager requested app restart, enabled=$ENABLE_GUARD_RESTART"
+        Log.e(GUARD_LOG_TAG, message)
+        FileLog.w(message)
+        if (ENABLE_GUARD_RESTART) {
+            AppRestartHelper.restartApp(ApplicationLoader.applicationContext)
+        }
     }
 
 }
