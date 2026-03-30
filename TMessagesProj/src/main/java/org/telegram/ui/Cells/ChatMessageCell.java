@@ -6053,7 +6053,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             boolean loadDocumentFromImageReceiver = MessageObject.isStickerDocument(document) || MessageObject.isAnimatedStickerDocument(document, true) || MessageObject.isGifDocument(document) || MessageObject.isRoundVideoDocument(document) || messageObject.hasVideoQualities();
             if (!loadDocumentFromImageReceiver && !isSmallImage) {
                 TLRPC.PhotoSize photo = document == null ? FileLoader.getClosestPhotoSizeWithSize(messageObject.photoThumbs, AndroidUtilities.getPhotoSize()) : null;
-                if (canDownload == 2 || canDownload == 1 && messageObject.isVideo()) {
+                if (!messageObject.loadingCancelled && (canDownload == 2 || canDownload == 1 && messageObject.isVideo())) {
                     if (canDownload != 2 && document != null && !messageObject.shouldEncryptPhotoOrVideo() && messageObject.canStreamVideo()) {
                         FileLoader.getInstance(currentAccount).loadFile(document, messageObject, FileLoader.PRIORITY_NORMAL, 0);
                     }
@@ -7982,7 +7982,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 photoImage.setShouldGenerateQualityThumb(true);
                                 if (!isSmallImage && !currentMessageObject.isHiddenSensitive() && documentCover == null && SharedConfig.isAutoplayVideo() && !currentMessageObject.isRepostPreview && (!currentMessageObject.hasMediaSpoilers() || currentMessageObject.isMediaSpoilersRevealed || currentMessageObject.revealingMediaSpoilers) && (
                                     (currentMessageObject.mediaExists || currentMessageObject.attachPathExists) ||
-                                    messageObject.canStreamVideo() && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject)
+                                    messageObject.canStreamVideo() && !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject)
                                 )) {
                                     photoImage.setAllowDecodeSingleFrame(true);
                                     photoImage.setAllowStartAnimation(true);
@@ -8002,9 +8002,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 if (MessageObject.isRoundVideoDocument(document)) {
                                     photoImage.setRoundRadius(AndroidUtilities.roundMessageSize / 2);
                                     canChangeRadius = false;
-                                    autoDownload = DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
+                                    autoDownload = !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
                                 } else if (MessageObject.isGifDocument(document, messageObject.hasValidGroupId())) {
-                                    autoDownload = DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
+                                    autoDownload = !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
                                 }
                                 if (currentMessageObject.isHiddenSensitive()) {
                                     autoDownload = false;
@@ -10156,7 +10156,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     }
 
                     if (!currentMessageObject.isHiddenSensitive() && SharedConfig.isAutoplayVideo() && !currentMessageObject.hasVideoCover() && !currentMessageObject.isRepostPreview && (!currentMessageObject.hasMediaSpoilers() || currentMessageObject.isMediaSpoilersRevealed || currentMessageObject.revealingMediaSpoilers) && (messageObject.type == MessageObject.TYPE_VIDEO /*|| messageObject.type == MessageObject.TYPE_STORY && messageObject.getDocument() != null*/) && !messageObject.needDrawBluredPreview() &&
-                            ((currentMessageObject.mediaExists || currentMessageObject.attachPathExists) || messageObject.canStreamVideo() && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject))
+                            ((currentMessageObject.mediaExists || currentMessageObject.attachPathExists) || messageObject.canStreamVideo() && !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject))
                     ) {
                         if (currentPosition != null) {
                             autoPlayingMedia = (currentPosition.flags & MessageObject.POSITION_FLAG_LEFT) != 0 && (currentPosition.flags & MessageObject.POSITION_FLAG_RIGHT) != 0;
@@ -10259,7 +10259,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         boolean autoDownload = false;
                         TLRPC.Document document = messageObject.getDocument();
                         if (MessageObject.isGifDocument(document, messageObject.hasValidGroupId()) || messageObject.type == MessageObject.TYPE_ROUND_VIDEO) {
-                            autoDownload = DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
+                            autoDownload = !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
                         }
                         if (messageObject.isHiddenSensitive()) {
                             autoDownload = false;
@@ -16596,7 +16596,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (documentAttach != null && documentAttach.dc_id == Integer.MIN_VALUE) {
             autoDownload = false;
         } else {
-            autoDownload = DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
+            autoDownload = !currentMessageObject.loadingCancelled && DownloadController.getInstance(currentAccount).canDownloadMedia(currentMessageObject);
         }
         if (currentMessageObject.isHiddenSensitive()) {
             autoDownload = false;

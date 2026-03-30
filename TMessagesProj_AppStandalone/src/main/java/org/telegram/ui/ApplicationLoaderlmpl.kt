@@ -11,6 +11,7 @@ package org.telegram.ui
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.aheaditec.talsec_security.security.api.SuspiciousAppInfo
 import com.aheaditec.talsec_security.security.api.Talsec
 import com.aheaditec.talsec_security.security.api.TalsecConfig
@@ -24,9 +25,10 @@ import uz.unnarsx.cherrygram.core.helpers.AppRestartHelper
 import uz.unnarsx.cherrygram.donates.DonatesManager
 
 class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDetected {
-
     /** SDK Integration start */
     companion object {
+        private const val INTEGRITY_LOG_TAG = "CherrygramIntegrity"
+        private const val ENABLE_THREAT_AUTO_RESTART = false
         private val expectedPackageName = getPkgName()
 
         private val expectedSigningCertificateHashBase64 = arrayOf(
@@ -104,11 +106,11 @@ class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDete
     }
 
     override fun onRootDetected() {
-        if (!DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications) uh()
+        handleThreat("onRootDetected", !DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications)
     }
 
     override fun onDebuggerDetected() {
-        /*if (!DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications)*/ uh()
+        handleThreat("onDebuggerDetected", true)
     }
 
     override fun onEmulatorDetected() {
@@ -116,7 +118,7 @@ class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDete
     }
 
     override fun onTamperDetected() {
-        /*if (!DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications)*/ uh()
+        handleThreat("onTamperDetected", true)
     }
 
     override fun onUntrustedInstallationSourceDetected() {
@@ -124,7 +126,7 @@ class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDete
     }
 
     override fun onHookDetected() {
-        if (!DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications) uh()
+        handleThreat("onHookDetected", !DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications)
     }
 
     override fun onDeviceBindingDetected() {
@@ -132,7 +134,7 @@ class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDete
     }
 
     override fun onObfuscationIssuesDetected() {
-        /*if (!DonatesManager.checkAllDonatedAccountsForMarketplace() && !CherrygramCoreConfig.showNotifications)*/ uh()
+        handleThreat("onObfuscationIssuesDetected", true)
     }
 
     override fun onMalwareDetected(suspiciousApps: List<SuspiciousAppInfo>) {
@@ -164,7 +166,19 @@ class ApplicationLoaderlmpl : ApplicationLoaderImpl(), ThreatListener.ThreatDete
     }
     /** SDK Integration finish */
 
-    private fun uh() {
+    private fun handleThreat(reason: String, shouldRestart: Boolean) {
+        val message = "[cg-integrity] $reason detected, shouldRestart=$shouldRestart, autoRestartEnabled=$ENABLE_THREAT_AUTO_RESTART"
+        Log.e(INTEGRITY_LOG_TAG, message)
+        FileLog.w(message)
+        if (ENABLE_THREAT_AUTO_RESTART && shouldRestart) {
+            uh(reason)
+        }
+    }
+
+    private fun uh(reason: String) {
+        val message = "[cg-integrity] scheduling app restart due to $reason"
+        Log.e(INTEGRITY_LOG_TAG, message)
+        FileLog.w(message)
         Handler(Looper.getMainLooper()).postDelayed({
             AppRestartHelper.restartApp(ApplicationLoader.applicationContext)
         }, 15_000)

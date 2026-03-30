@@ -1789,6 +1789,7 @@ public class DownloadController extends BaseController implements NotificationCe
                 }
             }
             messageObjects.get(i).putInDownloadsStore = false;
+            messageObjects.get(i).loadingCancelled = true;
             FileLoader.getInstance(currentAccount).loadFile(messageObjects.get(i).getDocument(), messageObjects.get(i), FileLoader.PRIORITY_LOW, 0);
             FileLoader.getInstance(currentAccount).cancelLoadFile(messageObjects.get(i).getDocument(), deleteFiles);
         }
