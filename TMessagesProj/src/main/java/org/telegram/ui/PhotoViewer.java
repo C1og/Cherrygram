@@ -957,7 +957,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private long videoGestureSeekStartPosition = C.TIME_UNSET;
     private long videoGestureSeekTargetPosition = C.TIME_UNSET;
     private long videoGestureLastPreviewTime;
-    private long videoGestureLastHapticStep = -1;
     private float videoGestureStartBrightness = -1.0f;
     private int videoGestureStartVolume;
     private int videoGestureMinVolume;
@@ -19010,7 +19009,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 videoGestureSeekStartPosition = C.TIME_UNSET;
                 videoGestureSeekTargetPosition = C.TIME_UNSET;
                 videoGestureLastPreviewTime = 0;
-                videoGestureLastHapticStep = -1;
                 videoGestureStartBrightness = -1.0f;
                 videoGestureResumePlayback = false;
                 videoGestureControlsWereVisible = videoPlayerControlVisible;
@@ -23298,7 +23296,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             videoGestureLockX = ev.getX();
             videoGestureLockY = ev.getY();
             videoGestureLastPreviewTime = 0;
-            videoGestureLastHapticStep = -1;
             videoGestureControlsWereVisible = videoPlayerControlVisible;
             if (!videoGestureControlsWereVisible) {
                 setVideoPlayerControlVisible(true, false);
@@ -23349,7 +23346,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         videoForwardDrawable.setTime(Math.abs(videoGestureSeekTargetPosition - videoGestureSeekStartPosition));
         videoPlayerSeekbar.setProgress(videoGestureSeekTargetPosition / (float) total, true);
         videoPlayerSeekbarView.invalidate();
-        maybePerformSeekGestureHaptic(videoGestureSeekTargetPosition, total);
         containerView.invalidate();
     }
 
@@ -23403,7 +23399,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             videoGestureSeekStartPosition = C.TIME_UNSET;
             videoGestureSeekTargetPosition = C.TIME_UNSET;
             videoGestureLastPreviewTime = 0;
-            videoGestureLastHapticStep = -1;
             if (videoGestureResumePlayback) {
                 playVideoOrWeb();
             }
@@ -23504,25 +23499,6 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             return 0.4 - (verticalOffsetDp - 160.0f) / 140.0f * 0.25;
         }
         return 0.15;
-    }
-
-    private void maybePerformSeekGestureHaptic(long targetMs, long durationMs) {
-        long interval;
-        if (durationMs < 60_000L) {
-            interval = 5_000L;
-        } else if (durationMs < 600_000L) {
-            interval = 10_000L;
-        } else if (durationMs < 3_600_000L) {
-            interval = 30_000L;
-        } else {
-            interval = 60_000L;
-        }
-        final long previousStep = videoGestureLastHapticStep;
-        final long step = targetMs / interval;
-        if (step != previousStep) {
-            videoGestureLastHapticStep = step;
-            containerView.performHapticFeedback(targetMs <= 0 || targetMs >= durationMs ? HapticFeedbackConstants.LONG_PRESS : HapticFeedbackConstants.CLOCK_TICK, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-        }
     }
 
     private void toggleCaptionAbove() {
