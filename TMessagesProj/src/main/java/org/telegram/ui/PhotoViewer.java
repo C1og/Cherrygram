@@ -64,6 +64,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -919,6 +920,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private Runnable onUserLeaveHintListener = this::onUserLeaveHint;
 
     private float currentVideoSpeed;
+    private float gesturePlaybackSpeed = Float.NaN;
 
     private long lastPhotoSetTime;
 
@@ -929,6 +931,28 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private VideoForwardDrawable videoForwardDrawable;
     private SeekSpeedDrawable seekSpeedDrawable;
+    private HintView2 videoGestureHint;
+
+    private static final int VIDEO_GESTURE_NONE = 0;
+    private static final int VIDEO_GESTURE_SEEK = 1;
+    private static final int VIDEO_GESTURE_BRIGHTNESS = 2;
+    private static final int VIDEO_GESTURE_VOLUME = 3;
+    private static final int VIDEO_GESTURE_LONG_PRESS_SPEED = 4;
+    private static final float VIDEO_GESTURE_LEFT_LONG_PRESS_SPEED = 0.5f;
+    private static final float VIDEO_GESTURE_RIGHT_LONG_PRESS_SPEED = 2.0f;
+    private static final float VIDEO_GESTURE_RIGHT_MIN_SPEED = 1.0f;
+    private static final float VIDEO_GESTURE_RIGHT_MAX_SPEED = 4.0f;
+    private static final float VIDEO_GESTURE_RESTORE_SPEED = 1.0f;
+    private int activeVideoGesture = VIDEO_GESTURE_NONE;
+    private float videoGestureStartX;
+    private float videoGestureStartY;
+    private boolean videoGestureStartedOnLeft;
+    private long videoGestureSeekStartPosition = C.TIME_UNSET;
+    private long videoGestureSeekTargetPosition = C.TIME_UNSET;
+    private float videoGestureStartBrightness = -1.0f;
+    private int videoGestureStartVolume;
+    private int videoGestureMinVolume;
+    private int videoGestureMaxVolume;
 
     private AnimatorSet currentListViewAnimation;
     private PhotoCropView photoCropView;
@@ -6156,20 +6180,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 if (parentActivity == null) {
                     return;
                 }
-                wasRotated = false;
-                fullscreenedByButton = 1;
-                if (prevOrientation == -10) {
-                    prevOrientation = parentActivity.getRequestedOrientation();
-                }
-//                WindowManager manager = (WindowManager) parentActivity.getSystemService(Activity.WINDOW_SERVICE);
-//                int displayRotation = manager.getDefaultDisplay().getRotation();
-//                if (displayRotation == Surface.ROTATION_270) {
-//                    parentActivity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE);
-//                } else {
-//                    parentActivity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-//                }
-                AndroidUtilities.lockOrientation(parentActivity, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                toggleActionBar(false, false);
+                enterVideoFullscreen();
             });
         }
 
@@ -7938,6 +7949,13 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         hintView.setColors(0xf9222222, 0xffffffff);
         containerView.addView(hintView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.LEFT, 8, 0, 8, 8));
 
+        videoGestureHint = new HintView2(activityContext, HintView2.DIRECTION_TOP);
+        videoGestureHint.setDuration(0);
+        videoGestureHint.allowBlur();
+        videoGestureHint.setJoint(0, 0);
+        videoGestureHint.setTextSize(15);
+        containerView.addView(videoGestureHint, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 12, 12, 12, 0));
+
         if (AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
             playButtonAccessibilityOverlay = new View(activityContext);
             playButtonAccessibilityOverlay.setContentDescription(getString("AccActionPlay", R.string.AccActionPlay));
@@ -8543,17 +8561,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void setMenuItemIcon(boolean animated, boolean isFinal) {
+        final float displayedSpeed = getDisplayedVideoSpeed();
         if (speedItem.getVisibility() != View.VISIBLE) {
             videoItemIcon.topText.setText("", animated);
         } else {
-            if (Math.abs(currentVideoSpeed - 1f) < 0.001f) {
+            if (Math.abs(displayedSpeed - 1f) < 0.001f) {
                 videoItemIcon.topText.setText("", animated);
             } else {
-                videoItemIcon.topText.setText(SpeedIconDrawable.formatNumber(currentVideoSpeed) + "x", animated);
+                videoItemIcon.topText.setText(SpeedIconDrawable.formatNumber(displayedSpeed) + "x", animated);
             }
         }
-        speedItem.setSpeed(currentVideoSpeed, animated);
-        chooseSpeedLayout.update(currentVideoSpeed, isFinal);
+        speedItem.setSpeed(displayedSpeed, animated);
+        chooseSpeedLayout.update(displayedSpeed, isFinal);
     }
 
     private void chooseQuality(int qualityIndex) {
@@ -8794,7 +8813,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     public float getCurrentVideoSpeed() {
-        return currentVideoSpeed;
+        return getDisplayedVideoSpeed();
+    }
+
+    private float getDisplayedVideoSpeed() {
+        return Float.isNaN(gesturePlaybackSpeed) ? currentVideoSpeed : gesturePlaybackSpeed;
     }
 
     private boolean checkInlinePermissions() {
@@ -9751,12 +9774,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (parentActivity == null) {
                 return;
             }
-            wasRotated = false;
-            fullscreenedByButton = 2;
-            if (prevOrientation == -10) {
-                prevOrientation = parentActivity.getRequestedOrientation();
-            }
-            parentActivity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            exitVideoFullscreen();
         });
     }
 
@@ -10423,23 +10441,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         return;
                     }
                     if (parentActivity != null && fullscreenedByButton != 0) {
-                        if (fullscreenedByButton == 1) {
-                            if (orientation >= 270 - 30 && orientation <= 270 + 30) {
-                                wasRotated = true;
-                            } else if (wasRotated && orientation > 0 && (orientation >= 330 || orientation <= 30)) {
-                                parentActivity.setRequestedOrientation(prevOrientation);
-                                fullscreenedByButton = 0;
-                                wasRotated = false;
-                            }
-                        } else {
-                            if (orientation > 0 && (orientation >= 330 || orientation <= 30)) {
-                                wasRotated = true;
-                            } else if (wasRotated && orientation >= 270 - 30 && orientation <= 270 + 30) {
-                                parentActivity.setRequestedOrientation(prevOrientation);
-                                fullscreenedByButton = 0;
-                                wasRotated = false;
-                            }
-                        }
+                        return;
                     }
                 }
             };
@@ -18056,6 +18058,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             parentActivity.setRequestedOrientation(prevOrientation);
             fullscreenedByButton = 0;
             wasRotated = false;
+            prevOrientation = -10;
         }
         if (!doneButtonPressed && !imagesArrLocals.isEmpty() && currentIndex >= 0 && currentIndex < imagesArrLocals.size()) {
             Object entry = imagesArrLocals.get(currentIndex);
@@ -18844,6 +18847,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     float lastX;
     float longPressX;
+    float longPressY;
     Runnable longPressRunnable = this::onLongPress;
 
     private boolean onTouchEvent(MotionEvent ev) {
@@ -18901,6 +18905,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
         if (tooltip != null) {
             tooltip.hide();
+        }
+
+        if (handleActiveVideoGesture(ev)) {
+            return true;
         }
 
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN || ev.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
@@ -18979,12 +18987,22 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
             if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
                 longPressX = ev.getX();
+                longPressY = ev.getY();
+                videoGestureStartX = ev.getX();
+                videoGestureStartY = ev.getY();
+                videoGestureStartedOnLeft = ev.getX() < getContainerViewWidth() / 2.0f;
+                videoGestureSeekStartPosition = C.TIME_UNSET;
+                videoGestureSeekTargetPosition = C.TIME_UNSET;
+                videoGestureStartBrightness = -1.0f;
                 AndroidUtilities.runOnUIThread(longPressRunnable, 300);
             } else {
                 AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
             }
         } else if (ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            if (Math.abs(longPressX - lastX) > AndroidUtilities.touchSlop) {
+            if (maybeStartVideoSwipeGesture(ev)) {
+                return true;
+            }
+            if (Math.abs(longPressX - ev.getX()) > AndroidUtilities.touchSlop || Math.abs(longPressY - ev.getY()) > AndroidUtilities.touchSlop) {
                 AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
             }
 
@@ -20585,6 +20603,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     @Override
     public boolean canDoubleTap(MotionEvent e) {
+        if (shouldUseFullscreenDoubleTap()) {
+            return true;
+        }
         if (checkImageView.getVisibility() != View.VISIBLE && !drawPressedDrawable[0] && !drawPressedDrawable[1]) {
             float x = e.getX();
             int side = Math.min(135, containerView.getMeasuredWidth() / 8);
@@ -20642,29 +20663,21 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     public void onLongPress() {
-        if (videoPlayer != null && scale <= 1.35f) {
-            long current = videoPlayer.getCurrentPosition();
-            long total = videoPlayer.getDuration();
-            if (current == C.TIME_UNSET || total < 8 * 1000) {
-                return;
-            }
-            float x = longPressX;
-            int width = getContainerViewWidth();
-            if (total > 180 * 1000) {
-                boolean forward;
-                if (x >= width / 3 * 2) {
-                    forward = true;
-                } else if (x < width / 3) {
-                    forward = false;
-                } else {
-                    return;
-                }
-                longVideoPlayerRewinder.startRewind(videoPlayer, forward, currentVideoSpeed);
-            } else {
-                final boolean forward = x > width / 3;
-                videoPlayerRewinder.startRewind(videoPlayer, forward, longPressX, currentVideoSpeed, seekSpeedDrawable);
-            }
+        if (!isVideoGestureReadyForLongPress()) {
+            return;
         }
+        discardTap = true;
+        moving = false;
+        zooming = false;
+        canDragDown = false;
+        activeVideoGesture = VIDEO_GESTURE_LONG_PRESS_SPEED;
+        final float speed = videoGestureStartedOnLeft ? VIDEO_GESTURE_LEFT_LONG_PRESS_SPEED : VIDEO_GESTURE_RIGHT_LONG_PRESS_SPEED;
+        applyGesturePlaybackSpeed(speed, false);
+        if (seekSpeedDrawable != null) {
+            seekSpeedDrawable.setSpeed(speed, false);
+            seekSpeedDrawable.setShown(true, true);
+        }
+        containerView.invalidate();
     }
 
     public VideoPlayerRewinder getVideoPlayerRewinder() {
@@ -20815,6 +20828,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     @Override
     public boolean onDoubleTap(MotionEvent e) {
+        if (shouldUseFullscreenDoubleTap()) {
+            if (photoProgressViews[0] != null && photoProgressViews[0].isVisible() && photoProgressViews[0].backgroundState != PROGRESS_NONE && Math.sqrt(Math.pow(AndroidUtilities.displaySize.x / 2f - e.getX(), 2) + Math.pow((AndroidUtilities.displaySize.y + AndroidUtilities.statusBarHeight) / 2f - e.getY(), 2)) < dp(40)) {
+                return false;
+            }
+            if (toggleVideoFullscreenFromGesture()) {
+                doubleTap = true;
+                hidePressedDrawables();
+                return true;
+            }
+        }
         if ((videoPlayer != null || photoViewerWebView != null && photoViewerWebView.isControllable()) && videoPlayerControlVisible) {
             long current = getCurrentVideoPosition();
             long total = getVideoDuration();
@@ -23076,6 +23099,316 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (closeMenu) {
             videoItem.toggleSubMenu();
         }
+    }
+
+    private void enterVideoFullscreen() {
+        if (parentActivity == null) {
+            return;
+        }
+        wasRotated = false;
+        fullscreenedByButton = 1;
+        if (prevOrientation == -10) {
+            prevOrientation = parentActivity.getRequestedOrientation();
+        }
+        parentActivity.setRequestedOrientation(getFixedLandscapeOrientation());
+        toggleActionBar(false, false);
+    }
+
+    private void exitVideoFullscreen() {
+        if (parentActivity == null) {
+            return;
+        }
+        wasRotated = false;
+        if (prevOrientation != -10) {
+            parentActivity.setRequestedOrientation(prevOrientation);
+        }
+        fullscreenedByButton = 0;
+        prevOrientation = -10;
+    }
+
+    private int getFixedLandscapeOrientation() {
+        int displayRotation = Surface.ROTATION_0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (parentActivity != null && parentActivity.getDisplay() != null) {
+                displayRotation = parentActivity.getDisplay().getRotation();
+            }
+        } else if (parentActivity != null) {
+            WindowManager manager = (WindowManager) parentActivity.getSystemService(Activity.WINDOW_SERVICE);
+            if (manager != null && manager.getDefaultDisplay() != null) {
+                displayRotation = manager.getDefaultDisplay().getRotation();
+            }
+        }
+        return displayRotation == Surface.ROTATION_270 ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+    }
+
+    private boolean shouldUseFullscreenDoubleTap() {
+        return currentEditMode == EDIT_MODE_NONE
+            && scale <= 1.05f
+            && (videoPlayer != null || photoViewerWebView != null && photoViewerWebView.isControllable())
+            && ((fullscreenButton[0] != null && fullscreenButton[0].getVisibility() == View.VISIBLE) || (exitFullscreenButton != null && exitFullscreenButton.getVisibility() == View.VISIBLE) || fullscreenedByButton != 0);
+    }
+
+    private boolean toggleVideoFullscreenFromGesture() {
+        if (exitFullscreenButton != null && exitFullscreenButton.getVisibility() == View.VISIBLE) {
+            exitFullscreenButton.performClick();
+            return true;
+        }
+        if (fullscreenButton[0] != null && fullscreenButton[0].getVisibility() == View.VISIBLE) {
+            fullscreenButton[0].performClick();
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isVideoGestureReadyForLongPress() {
+        return currentEditMode == EDIT_MODE_NONE
+            && scale <= 1.05f
+            && (videoPlayer != null || photoViewerWebView != null && photoViewerWebView.isControllable())
+            && isTouchInsideCurrentVideo(longPressX, longPressY)
+            && (qualityChooseView == null || qualityChooseView.getVisibility() != View.VISIBLE);
+    }
+
+    private boolean isVideoGestureCandidate(MotionEvent ev) {
+        return ev != null
+            && ev.getPointerCount() == 1
+            && currentEditMode == EDIT_MODE_NONE
+            && sendPhotoType != SELECT_TYPE_AVATAR
+            && sendPhotoType != SELECT_TYPE_STICKER
+            && scale <= 1.05f
+            && (videoPlayer != null || photoViewerWebView != null && photoViewerWebView.isControllable())
+            && isTouchInsideCurrentVideo(ev.getX(), ev.getY())
+            && (qualityChooseView == null || qualityChooseView.getVisibility() != View.VISIBLE);
+    }
+
+    private boolean isTouchInsideCurrentVideo(float x, float y) {
+        View view = photoViewerWebView != null && photoViewerWebView.isControllable() ? photoViewerWebView.getWebView() : aspectRatioFrameLayout;
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        return x >= view.getX() && x <= view.getX() + view.getWidth() && y >= view.getY() && y <= view.getY() + view.getHeight();
+    }
+
+    private boolean handleActiveVideoGesture(MotionEvent ev) {
+        if (activeVideoGesture == VIDEO_GESTURE_NONE) {
+            return false;
+        }
+        if (ev.getPointerCount() != 1 || ev.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+            finishVideoGesture(false);
+            return true;
+        }
+        if (activeVideoGesture == VIDEO_GESTURE_LONG_PRESS_SPEED) {
+            if (ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                if (!videoGestureStartedOnLeft) {
+                    float speed = VIDEO_GESTURE_RIGHT_LONG_PRESS_SPEED + (ev.getX() - longPressX) / dp(72.0f);
+                    speed = Math.max(VIDEO_GESTURE_RIGHT_MIN_SPEED, Math.min(VIDEO_GESTURE_RIGHT_MAX_SPEED, speed));
+                    applyGesturePlaybackSpeed(speed, true);
+                    if (seekSpeedDrawable != null) {
+                        seekSpeedDrawable.setSpeed(speed, true);
+                    }
+                }
+                return true;
+            }
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL || ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+                finishVideoGesture(false);
+                return true;
+            }
+            return true;
+        }
+        if (activeVideoGesture == VIDEO_GESTURE_SEEK) {
+            if (ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                updateSeekGesture(ev);
+                return true;
+            }
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL || ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+                finishVideoGesture(ev.getActionMasked() == MotionEvent.ACTION_UP);
+                return true;
+            }
+            return true;
+        }
+        if (activeVideoGesture == VIDEO_GESTURE_BRIGHTNESS) {
+            if (ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                updateBrightnessGesture(ev);
+                return true;
+            }
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL || ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+                finishVideoGesture(false);
+                return true;
+            }
+            return true;
+        }
+        if (activeVideoGesture == VIDEO_GESTURE_VOLUME) {
+            if (ev.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                updateVolumeGesture(ev);
+                return true;
+            }
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL || ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+                finishVideoGesture(false);
+                return true;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean maybeStartVideoSwipeGesture(MotionEvent ev) {
+        if (activeVideoGesture != VIDEO_GESTURE_NONE || !isVideoGestureCandidate(ev)) {
+            return false;
+        }
+        float dx = ev.getX() - videoGestureStartX;
+        float dy = ev.getY() - videoGestureStartY;
+        if (Math.abs(dx) <= touchSlop && Math.abs(dy) <= touchSlop) {
+            return false;
+        }
+        discardTap = true;
+        hidePressedDrawables();
+        AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            long current = getCurrentVideoPosition();
+            long total = getVideoDuration();
+            if (current == C.TIME_UNSET || total <= 0 || total == C.TIME_UNSET) {
+                return false;
+            }
+            activeVideoGesture = VIDEO_GESTURE_SEEK;
+            videoGestureSeekStartPosition = current;
+            videoGestureSeekTargetPosition = current;
+            videoForwardDrawable.setOneShootAnimation(false);
+            videoForwardDrawable.setShowing(true);
+            updateSeekGesture(ev);
+        } else if (videoGestureStartedOnLeft) {
+            activeVideoGesture = VIDEO_GESTURE_BRIGHTNESS;
+            videoGestureStartBrightness = resolveCurrentScreenBrightness();
+            updateBrightnessGesture(ev);
+        } else {
+            AudioManager audioManager = (AudioManager) activityContext.getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) {
+                return false;
+            }
+            activeVideoGesture = VIDEO_GESTURE_VOLUME;
+            videoGestureMinVolume = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC) : 0;
+            videoGestureMaxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            videoGestureStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            updateVolumeGesture(ev);
+        }
+        return true;
+    }
+
+    private void updateSeekGesture(MotionEvent ev) {
+        long total = getVideoDuration();
+        if (videoGestureSeekStartPosition == C.TIME_UNSET || total <= 0 || total == C.TIME_UNSET) {
+            return;
+        }
+        long delta = (long) (((ev.getX() - videoGestureStartX) / Math.max(1.0f, getContainerViewWidth())) * total);
+        videoGestureSeekTargetPosition = Math.max(0, Math.min(total, videoGestureSeekStartPosition + delta));
+        videoForwardDrawable.setLeftSide(videoGestureSeekTargetPosition < videoGestureSeekStartPosition);
+        videoForwardDrawable.setTime(Math.abs(videoGestureSeekTargetPosition - videoGestureSeekStartPosition));
+        videoPlayerSeekbar.setProgress(videoGestureSeekTargetPosition / (float) total, true);
+        videoPlayerSeekbarView.invalidate();
+        containerView.invalidate();
+    }
+
+    private void updateBrightnessGesture(MotionEvent ev) {
+        if (videoGestureStartBrightness < 0) {
+            videoGestureStartBrightness = resolveCurrentScreenBrightness();
+        }
+        float brightness = videoGestureStartBrightness + (videoGestureStartY - ev.getY()) / Math.max(1.0f, getContainerViewHeight());
+        brightness = Math.max(0.02f, Math.min(1.0f, brightness));
+        setCurrentScreenBrightness(brightness);
+        showVideoGestureHint(LocaleController.formatString(R.string.GestureBrightness, Math.round(brightness * 100.0f)));
+    }
+
+    private void updateVolumeGesture(MotionEvent ev) {
+        AudioManager audioManager = (AudioManager) activityContext.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager == null) {
+            return;
+        }
+        int range = Math.max(1, videoGestureMaxVolume - videoGestureMinVolume);
+        int volume = videoGestureStartVolume + Math.round(((videoGestureStartY - ev.getY()) / Math.max(1.0f, getContainerViewHeight())) * range);
+        volume = Math.max(videoGestureMinVolume, Math.min(videoGestureMaxVolume, volume));
+        if (volume != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0);
+        }
+        showVideoGestureHint(LocaleController.formatString(R.string.GestureVolume, Math.round((volume - videoGestureMinVolume) * 100.0f / range)));
+    }
+
+    private void finishVideoGesture(boolean applySeek) {
+        if (activeVideoGesture == VIDEO_GESTURE_LONG_PRESS_SPEED) {
+            if (seekSpeedDrawable != null) {
+                seekSpeedDrawable.setShown(false, true);
+            }
+            gesturePlaybackSpeed = Float.NaN;
+            activeVideoGesture = VIDEO_GESTURE_NONE;
+            chooseSpeed(VIDEO_GESTURE_RESTORE_SPEED, true, false);
+            return;
+        }
+        if (activeVideoGesture == VIDEO_GESTURE_SEEK) {
+            if (applySeek && videoGestureSeekTargetPosition != C.TIME_UNSET) {
+                seekVideoOrWebTo(videoGestureSeekTargetPosition);
+            } else {
+                long current = getCurrentVideoPosition();
+                long total = getVideoDuration();
+                if (current != C.TIME_UNSET && total > 0 && total != C.TIME_UNSET) {
+                    videoPlayerSeekbar.setProgress(current / (float) total, true);
+                    videoPlayerSeekbarView.invalidate();
+                }
+            }
+            videoForwardDrawable.setShowing(false);
+            videoGestureSeekStartPosition = C.TIME_UNSET;
+            videoGestureSeekTargetPosition = C.TIME_UNSET;
+            containerView.invalidate();
+        } else if (activeVideoGesture == VIDEO_GESTURE_BRIGHTNESS || activeVideoGesture == VIDEO_GESTURE_VOLUME) {
+            hideVideoGestureHint();
+        }
+        activeVideoGesture = VIDEO_GESTURE_NONE;
+    }
+
+    private void applyGesturePlaybackSpeed(float speed, boolean animated) {
+        gesturePlaybackSpeed = speed;
+        if (videoPlayer != null) {
+            videoPlayer.setPlaybackSpeed(speed);
+        }
+        if (photoViewerWebView != null && photoViewerWebView.isControllable()) {
+            photoViewerWebView.setPlaybackSpeed(speed);
+        }
+        setMenuItemIcon(animated, false);
+    }
+
+    private void showVideoGestureHint(CharSequence text) {
+        if (videoGestureHint == null) {
+            return;
+        }
+        videoGestureHint.setText(text, true);
+        videoGestureHint.setMaxWidthPx(HintView2.cutInFancyHalf(text, videoGestureHint.getTextPaint()));
+        videoGestureHint.show();
+    }
+
+    private void hideVideoGestureHint() {
+        if (videoGestureHint != null) {
+            videoGestureHint.hide();
+        }
+    }
+
+    private float resolveCurrentScreenBrightness() {
+        if (parentActivity != null) {
+            WindowManager.LayoutParams layoutParams = parentActivity.getWindow().getAttributes();
+            if (layoutParams != null && layoutParams.screenBrightness >= 0.0f) {
+                return Math.max(0.02f, Math.min(1.0f, layoutParams.screenBrightness));
+            }
+        }
+        try {
+            return Math.max(0.02f, Math.min(1.0f, Settings.System.getInt(ApplicationLoader.applicationContext.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS) / 255.0f));
+        } catch (Exception e) {
+            FileLog.e(e);
+            return 0.5f;
+        }
+    }
+
+    private void setCurrentScreenBrightness(float brightness) {
+        if (parentActivity == null || parentActivity.isFinishing()) {
+            return;
+        }
+        WindowManager.LayoutParams layoutParams = parentActivity.getWindow().getAttributes();
+        layoutParams.screenBrightness = brightness;
+        parentActivity.getWindow().setAttributes(layoutParams);
     }
 
     private void toggleCaptionAbove() {

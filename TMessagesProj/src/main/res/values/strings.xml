@@ -9006,6 +9006,8 @@
     <string name="VideoConversionDone">Video published.</string>
     <string name="VideoConversionDoneView">View</string>
     <string name="SeekSpeedHint">Swipe sideways to change speed</string>
+    <string name="GestureBrightness">Brightness %1$d%%</string>
+    <string name="GestureVolume">Volume %1$d%%</string>
     <string name="VideoConversionNowTitle">Wait!</string>
     <string name="VideoConversionNowText">This video hasn\'t been converted and optimized yet. If you send it now, the viewers of the video may experience slow download speed.</string>
     <string name="VideoConversionNowSend">Send Anyway</string>
