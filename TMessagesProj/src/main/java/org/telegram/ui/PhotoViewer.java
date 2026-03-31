@@ -943,16 +943,27 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private static final float VIDEO_GESTURE_RIGHT_MIN_SPEED = 1.0f;
     private static final float VIDEO_GESTURE_RIGHT_MAX_SPEED = 4.0f;
     private static final float VIDEO_GESTURE_RESTORE_SPEED = 1.0f;
+    private static final float VIDEO_GESTURE_TRIGGER_DISTANCE_DP = 12.0f;
+    private static final float VIDEO_GESTURE_CANCEL_THRESHOLD_DP = 8.0f;
+    private static final float VIDEO_GESTURE_ACCEL_EXPONENT = 1.3f;
+    private static final float VIDEO_GESTURE_EFFECTIVE_SCREEN_RATIO = 0.85f;
+    private static final long VIDEO_GESTURE_PREVIEW_THROTTLE_MS = 50L;
     private int activeVideoGesture = VIDEO_GESTURE_NONE;
     private float videoGestureStartX;
     private float videoGestureStartY;
+    private float videoGestureLockX;
+    private float videoGestureLockY;
     private boolean videoGestureStartedOnLeft;
     private long videoGestureSeekStartPosition = C.TIME_UNSET;
     private long videoGestureSeekTargetPosition = C.TIME_UNSET;
+    private long videoGestureLastPreviewTime;
+    private long videoGestureLastHapticStep = -1;
     private float videoGestureStartBrightness = -1.0f;
     private int videoGestureStartVolume;
     private int videoGestureMinVolume;
     private int videoGestureMaxVolume;
+    private boolean videoGestureResumePlayback;
+    private boolean videoGestureControlsWereVisible;
 
     private AnimatorSet currentListViewAnimation;
     private PhotoCropView photoCropView;
@@ -1483,6 +1494,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private Runnable updateProgressRunnable = new Runnable() {
         @Override
         public void run() {
+            if (activeVideoGesture == VIDEO_GESTURE_SEEK) {
+                return;
+            }
             if (videoPlayer != null || photoViewerWebView != null && photoViewerWebView.isControllable()) {
                 if (isCurrentVideo) {
                     if (!videoTimelineView.isDragging()) {
@@ -18990,10 +19004,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 longPressY = ev.getY();
                 videoGestureStartX = ev.getX();
                 videoGestureStartY = ev.getY();
+                videoGestureLockX = ev.getX();
+                videoGestureLockY = ev.getY();
                 videoGestureStartedOnLeft = ev.getX() < getContainerViewWidth() / 2.0f;
                 videoGestureSeekStartPosition = C.TIME_UNSET;
                 videoGestureSeekTargetPosition = C.TIME_UNSET;
+                videoGestureLastPreviewTime = 0;
+                videoGestureLastHapticStep = -1;
                 videoGestureStartBrightness = -1.0f;
+                videoGestureResumePlayback = false;
+                videoGestureControlsWereVisible = videoPlayerControlVisible;
                 AndroidUtilities.runOnUIThread(longPressRunnable, 300);
             } else {
                 AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
@@ -23078,6 +23098,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private void chooseSpeed(float speed, boolean isFinal, boolean closeMenu) {
+        final boolean applySpeedImmediately = speed != currentVideoSpeed || !Float.isNaN(gesturePlaybackSpeed) && Math.abs(gesturePlaybackSpeed - speed) > 0.001f;
         if (speed != currentVideoSpeed) {
             currentVideoSpeed = speed;
             if (currentMessageObject != null) {
@@ -23088,6 +23109,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     preferences.edit().putFloat("speed" + currentMessageObject.getDialogId() + "_" + currentMessageObject.getId(), currentVideoSpeed).commit();
                 }
             }
+        }
+        if (applySpeedImmediately) {
             if (videoPlayer != null) {
                 videoPlayer.setPlaybackSpeed(currentVideoSpeed);
             }
@@ -23220,7 +23243,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 return true;
             }
             if (ev.getActionMasked() == MotionEvent.ACTION_UP || ev.getActionMasked() == MotionEvent.ACTION_CANCEL || ev.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
-                finishVideoGesture(ev.getActionMasked() == MotionEvent.ACTION_UP);
+                final boolean applySeek = ev.getActionMasked() == MotionEvent.ACTION_UP && Math.abs(ev.getX() - videoGestureLockX) >= dp(VIDEO_GESTURE_CANCEL_THRESHOLD_DP);
+                finishVideoGesture(applySeek);
                 return true;
             }
             return true;
@@ -23256,7 +23280,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         float dx = ev.getX() - videoGestureStartX;
         float dy = ev.getY() - videoGestureStartY;
-        if (Math.abs(dx) <= touchSlop && Math.abs(dy) <= touchSlop) {
+        if (Math.abs(dx) <= Math.max(touchSlop, dp(VIDEO_GESTURE_TRIGGER_DISTANCE_DP)) && Math.abs(dy) <= Math.max(touchSlop, dp(VIDEO_GESTURE_TRIGGER_DISTANCE_DP))) {
             return false;
         }
         discardTap = true;
@@ -23271,11 +23295,25 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             activeVideoGesture = VIDEO_GESTURE_SEEK;
             videoGestureSeekStartPosition = current;
             videoGestureSeekTargetPosition = current;
+            videoGestureLockX = ev.getX();
+            videoGestureLockY = ev.getY();
+            videoGestureLastPreviewTime = 0;
+            videoGestureLastHapticStep = -1;
+            videoGestureControlsWereVisible = videoPlayerControlVisible;
+            if (!videoGestureControlsWereVisible) {
+                setVideoPlayerControlVisible(true, false);
+            }
+            AndroidUtilities.cancelRunOnUIThread(hideActionBarRunnable);
+            videoGestureResumePlayback = isVideoPlaying();
+            if (videoGestureResumePlayback) {
+                pauseVideoOrWeb();
+            }
             videoForwardDrawable.setOneShootAnimation(false);
             videoForwardDrawable.setShowing(true);
             updateSeekGesture(ev);
         } else if (videoGestureStartedOnLeft) {
             activeVideoGesture = VIDEO_GESTURE_BRIGHTNESS;
+            videoGestureLockY = ev.getY();
             videoGestureStartBrightness = resolveCurrentScreenBrightness();
             updateBrightnessGesture(ev);
         } else {
@@ -23284,6 +23322,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 return false;
             }
             activeVideoGesture = VIDEO_GESTURE_VOLUME;
+            videoGestureLockY = ev.getY();
             videoGestureMinVolume = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC) : 0;
             videoGestureMaxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
             videoGestureStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
@@ -23297,12 +23336,20 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (videoGestureSeekStartPosition == C.TIME_UNSET || total <= 0 || total == C.TIME_UNSET) {
             return;
         }
-        long delta = (long) (((ev.getX() - videoGestureStartX) / Math.max(1.0f, getContainerViewWidth())) * total);
-        videoGestureSeekTargetPosition = Math.max(0, Math.min(total, videoGestureSeekStartPosition + delta));
+        final long now = SystemClock.elapsedRealtime();
+        if (now - videoGestureLastPreviewTime < VIDEO_GESTURE_PREVIEW_THROTTLE_MS) {
+            return;
+        }
+        videoGestureLastPreviewTime = now;
+
+        final float deltaX = ev.getX() - videoGestureLockX;
+        final float verticalOffset = Math.abs(ev.getY() - videoGestureLockY);
+        videoGestureSeekTargetPosition = calculateVideoGestureSeekTarget(deltaX, verticalOffset, total);
         videoForwardDrawable.setLeftSide(videoGestureSeekTargetPosition < videoGestureSeekStartPosition);
         videoForwardDrawable.setTime(Math.abs(videoGestureSeekTargetPosition - videoGestureSeekStartPosition));
         videoPlayerSeekbar.setProgress(videoGestureSeekTargetPosition / (float) total, true);
         videoPlayerSeekbarView.invalidate();
+        maybePerformSeekGestureHaptic(videoGestureSeekTargetPosition, total);
         containerView.invalidate();
     }
 
@@ -23310,7 +23357,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (videoGestureStartBrightness < 0) {
             videoGestureStartBrightness = resolveCurrentScreenBrightness();
         }
-        float brightness = videoGestureStartBrightness + (videoGestureStartY - ev.getY()) / Math.max(1.0f, getContainerViewHeight());
+        float brightness = videoGestureStartBrightness + (videoGestureLockY - ev.getY()) / Math.max(1.0f, getContainerViewHeight());
         brightness = Math.max(0.02f, Math.min(1.0f, brightness));
         setCurrentScreenBrightness(brightness);
         showVideoGestureHint(LocaleController.formatString(R.string.GestureBrightness, Math.round(brightness * 100.0f)));
@@ -23322,7 +23369,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             return;
         }
         int range = Math.max(1, videoGestureMaxVolume - videoGestureMinVolume);
-        int volume = videoGestureStartVolume + Math.round(((videoGestureStartY - ev.getY()) / Math.max(1.0f, getContainerViewHeight())) * range);
+        int volume = videoGestureStartVolume + Math.round(((videoGestureLockY - ev.getY()) / Math.max(1.0f, getContainerViewHeight())) * range);
         volume = Math.max(videoGestureMinVolume, Math.min(videoGestureMaxVolume, volume));
         if (volume != audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0);
@@ -23335,9 +23382,10 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (seekSpeedDrawable != null) {
                 seekSpeedDrawable.setShown(false, true);
             }
-            gesturePlaybackSpeed = Float.NaN;
             activeVideoGesture = VIDEO_GESTURE_NONE;
             chooseSpeed(VIDEO_GESTURE_RESTORE_SPEED, true, false);
+            gesturePlaybackSpeed = Float.NaN;
+            setMenuItemIcon(true, true);
             return;
         }
         if (activeVideoGesture == VIDEO_GESTURE_SEEK) {
@@ -23354,6 +23402,17 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             videoForwardDrawable.setShowing(false);
             videoGestureSeekStartPosition = C.TIME_UNSET;
             videoGestureSeekTargetPosition = C.TIME_UNSET;
+            videoGestureLastPreviewTime = 0;
+            videoGestureLastHapticStep = -1;
+            if (videoGestureResumePlayback) {
+                playVideoOrWeb();
+            }
+            if (!videoGestureControlsWereVisible) {
+                setVideoPlayerControlVisible(false, false);
+            } else if (videoGestureResumePlayback) {
+                scheduleActionBarHide();
+            }
+            videoGestureResumePlayback = false;
             containerView.invalidate();
         } else if (activeVideoGesture == VIDEO_GESTURE_BRIGHTNESS || activeVideoGesture == VIDEO_GESTURE_VOLUME) {
             hideVideoGestureHint();
@@ -23377,7 +23436,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             return;
         }
         videoGestureHint.setText(text, true);
-        videoGestureHint.setMaxWidthPx(HintView2.cutInFancyHalf(text, videoGestureHint.getTextPaint()));
+        int maxWidth = Math.max(dp(120), getContainerViewWidth() - dp(48));
+        int measuredWidth = (int) Math.ceil(HintView2.measureCorrectly(text, videoGestureHint.getTextPaint())) + dp(32);
+        videoGestureHint.setMaxWidthPx(Math.min(maxWidth, measuredWidth));
         videoGestureHint.show();
     }
 
@@ -23409,6 +23470,59 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         WindowManager.LayoutParams layoutParams = parentActivity.getWindow().getAttributes();
         layoutParams.screenBrightness = brightness;
         parentActivity.getWindow().setAttributes(layoutParams);
+    }
+
+    private long calculateVideoGestureSeekTarget(float deltaX, float verticalOffset, long duration) {
+        final float effectiveWidth = Math.max(1.0f, getContainerViewWidth() * VIDEO_GESTURE_EFFECTIVE_SCREEN_RATIO);
+        final float ratio = Math.max(-1.0f, Math.min(1.0f, deltaX / effectiveWidth));
+        final double curved = Math.signum(ratio) * Math.pow(Math.abs(ratio), VIDEO_GESTURE_ACCEL_EXPONENT);
+        final double maxSeekSeconds = calculateVideoGestureMaxSeekRange(duration / 1000.0);
+        final double precision = calculateVideoGesturePrecision(verticalOffset);
+        final long seekMs = (long) (curved * maxSeekSeconds * precision * 1000.0);
+        return Math.max(0L, Math.min(duration, videoGestureSeekStartPosition + seekMs));
+    }
+
+    private double calculateVideoGestureMaxSeekRange(double durationSeconds) {
+        if (durationSeconds <= 0) {
+            return 0.0;
+        }
+        if (durationSeconds <= 30.0) {
+            return durationSeconds;
+        }
+        return Math.min(durationSeconds, 30.0 * (1.0 + 1.5 * Math.log(durationSeconds / 30.0)));
+    }
+
+    private double calculateVideoGesturePrecision(float verticalOffsetPx) {
+        final float verticalOffsetDp = verticalOffsetPx / AndroidUtilities.density;
+        if (verticalOffsetDp < 60.0f) {
+            return 1.0;
+        }
+        if (verticalOffsetDp < 160.0f) {
+            return 1.0 - (verticalOffsetDp - 60.0f) / 100.0f * 0.6;
+        }
+        if (verticalOffsetDp < 300.0f) {
+            return 0.4 - (verticalOffsetDp - 160.0f) / 140.0f * 0.25;
+        }
+        return 0.15;
+    }
+
+    private void maybePerformSeekGestureHaptic(long targetMs, long durationMs) {
+        long interval;
+        if (durationMs < 60_000L) {
+            interval = 5_000L;
+        } else if (durationMs < 600_000L) {
+            interval = 10_000L;
+        } else if (durationMs < 3_600_000L) {
+            interval = 30_000L;
+        } else {
+            interval = 60_000L;
+        }
+        final long previousStep = videoGestureLastHapticStep;
+        final long step = targetMs / interval;
+        if (step != previousStep) {
+            videoGestureLastHapticStep = step;
+            containerView.performHapticFeedback(targetMs <= 0 || targetMs >= durationMs ? HapticFeedbackConstants.LONG_PRESS : HapticFeedbackConstants.CLOCK_TICK, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+        }
     }
 
     private void toggleCaptionAbove() {
